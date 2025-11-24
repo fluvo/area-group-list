@@ -116,6 +116,9 @@
     #consoleMap .gm-ui-hover-effect {
       display: none !important;
     }
+    #consoleMap .gm-style-iw-ch {
+      padding-top: 8px !important;
+    }
   `;
   document.head.appendChild(style);
 
@@ -143,7 +146,7 @@
   const yellowInfoWindows = [];
   const orangeItems = [];
 
-  // 黃色：固定座標 + 各自 InfoWindow（點擊 toggle 開關）
+  // 黃色：固定座標 + 各自 InfoWindow（點擊 toggle 開關；右鍵選單：1 編輯 / 2 刪除）
   function createPlaceMarker(p) {
     const pos = { lat: p.lat, lng: p.lng };
 
@@ -173,26 +176,41 @@
       isOpen = !isOpen;
     });
 
-    // ⭐ 右鍵：詢問是否刪除這個黃色點
+    // ⭐ 右鍵：1 編輯 / 2 刪除（刪除前再確認一次）
     marker.addListener('rightclick', () => {
-      const ok = confirm('要刪除這個地標嗎？');
-      if (!ok) return;
+      const choice = prompt('右鍵選擇動作：\n1 = 編輯名稱\n2 = 刪除地標', '1');
+      if (choice === null) return;
 
-      // 1. 從地圖移除 marker & InfoWindow
-      iw.close();
-      marker.setMap(null);
+      if (choice === '1') {
+        const newJp = prompt('重新設定：輸入主要名稱', p.name);
+        if (newJp === null) return;
+        const newEn = prompt('重新設定：輸入英文名稱', p.name_en);
+        if (newEn === null) return;
 
-      // 2. 從 yellowInfoWindows 陣列移除這個 iw（可有可無，但比較乾淨）
-      const iwIndex = yellowInfoWindows.indexOf(iw);
-      if (iwIndex >= 0) yellowInfoWindows.splice(iwIndex, 1);
+        p.name = newJp;
+        p.name_en = newEn;
 
-      // 3. 從 places 陣列移除對應物件
-      const placeIndex = places.indexOf(p);
-      if (placeIndex >= 0) places.splice(placeIndex, 1);
+        marker.setTitle(`${p.name} (${p.name_en})`);
+        iw.setContent(`<b style="font-size:14px;color:#7a5">${p.name}</b><div>${p.name_en}</div>`);
+        if (!isOpen) {
+          iw.open({ map, anchor: marker });
+          isOpen = true;
+        }
+      } else if (choice === '2') {
+        const ok = confirm('要刪除這個地標嗎？');
+        if (!ok) return;
 
-      // 4. 如果你有要重新算 bounds / fitBounds，也可以在這裡做（可選）
-      //    目前可以先不動地圖視角，使用上比較直覺
-      console.log('Place removed:', { lat: p.lat, lng: p.lng, jp: p.name, en: p.name_en });
+        iw.close();
+        marker.setMap(null);
+
+        const iwIndex = yellowInfoWindows.indexOf(iw);
+        if (iwIndex >= 0) yellowInfoWindows.splice(iwIndex, 1);
+
+        const placeIndex = places.indexOf(p);
+        if (placeIndex >= 0) places.splice(placeIndex, 1);
+
+        console.log('Place removed:', { lat: p.lat, lng: p.lng, jp: p.name, en: p.name_en });
+      }
     });
 
     yellowInfoWindows.push(iw);
