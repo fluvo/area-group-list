@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Roppongi, Azabu-Juban",
+    "lat": 35.6603,
+    "lng": 139.7354,
+    "radiusM": 1200
+  },
+  {
+    "name": "Harajuku, Omotesando, Aoyama",
+    "lat": 35.667,
+    "lng": 139.7111,
+    "radiusM": 2200
+  },
+  {
+    "name": "Shibuya",
+    "lat": 35.6582,
+    "lng": 139.6983,
+    "radiusM": 900
+  },
+  {
+    "name": "Daikanyama, Ebisu, Aaka, Meguro",
+    "lat": 35.6471,
+    "lng": 139.7031,
+    "radiusM": 3500
+  },
+  {
+    "name": "Sangenjaya, Yoga, Futako-Tamagawa",
+    "lat": 35.6288,
+    "lng": 139.6497,
+    "radiusM": 3500
+  }
+]
