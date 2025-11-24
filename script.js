@@ -204,48 +204,50 @@
     createPlaceMarker(p);
   }
 
-  // ★ 共用：右鍵新增 place 的處理函式
-  function handleMapRightClick(e) {
-    if (!e.latLng) return;
+  // 共用：建立 place（latLng 可為 LatLng 或 {lat,lng}）
+  function createNewPlaceAt(latLng) {
+    if (!latLng) return;
 
-    const lat = +e.latLng.lat().toFixed(6);
-    const lng = +e.latLng.lng().toFixed(6);
+    const toNum = (v) => +Number(v).toFixed(6);
 
-    const jp = prompt('新增 place 的日文名稱（jp）：', '');
-    if (jp === null) return; // 按取消就不建立
+    const lat = typeof latLng.lat === 'function'
+      ? toNum(latLng.lat())
+      : toNum(latLng.lat);
+    const lng = typeof latLng.lng === 'function'
+      ? toNum(latLng.lng())
+      : toNum(latLng.lng);
 
-    const en = prompt('新增 place 的英文名稱（en）：', '');
+    const jp = prompt('新增地點：輸入日文名稱（jp）', '');
+    if (jp === null) return;
+
+    const en = prompt('新增地點：輸入英文名稱（en）', '');
     if (en === null) return;
 
     const newPlace = { lat, lng, jp, en };
-
     places.push(newPlace);
     createPlaceMarker(newPlace);
 
     console.log('New place added:', newPlace);
   }
 
-  // 地圖空白處右鍵 → 新增 place
-  map.addListener('rightclick', handleMapRightClick);
-
-  // 橘色：圓 + 滑桿控制
-  for (const p of groups) {
-    const pos = { lat: p.lat, lng: p.lng };
+  // 共用：實際在地圖上建立一個橘色 group（marker + circle + label + panel）
+  function buildOrangeGroupOnMap(groupData) {
+    const pos = { lat: groupData.lat, lng: groupData.lng };
 
     const marker = new google.maps.Marker({
       map,
       position: pos,
       icon: svgOrangeDot,
       draggable: true,
-      title: p.name
+      title: groupData.name
     });
 
-    const labelOverlay = new OrangeLabel(new google.maps.LatLng(pos.lat, pos.lng), p.name, map);
+    const labelOverlay = new OrangeLabel(new google.maps.LatLng(pos.lat, pos.lng), groupData.name, map);
 
     const circle = new google.maps.Circle({
       map,
       center: pos,
-      radius: p.radiusM,
+      radius: groupData.radiusM,
       strokeColor:'#FF7A00',
       strokeOpacity:0.9,
       strokeWeight:2,
@@ -261,16 +263,60 @@
       if (currentPos) labelOverlay.setPosition(currentPos);
     });
 
-    // ★ 在橘色圈圈裡右鍵 → 也當作新增 place
-    circle.addListener('rightclick', handleMapRightClick);
+    const o = { name: groupData.name, marker, circle, labelOverlay };
+    orangeItems.push(o);
 
-    // ★ 在橘色圓點上右鍵 → 一樣新增 place（選擇性，但通常很直覺）
-    marker.addListener('rightclick', handleMapRightClick);
+    // 右鍵一律共用 1/2 選單
+    circle.addListener('rightclick', (e) => {
+      handleMapRightClick({ latLng: e.latLng || circle.getCenter() });
+    });
+    marker.addListener('rightclick', (e) => {
+      handleMapRightClick({ latLng: e.latLng || marker.getPosition() });
+    });
 
-    orangeItems.push({ name: p.name, marker, circle, labelOverlay });
-    bounds.extend(pos);
+    appendOrangeControlBlock(o);
+
+    marker.addListener('dragend', printOrangeState);
+
+    return { o, marker };
   }
-  if (!bounds.isEmpty()) map.fitBounds(bounds);
+
+  // 共用：建立 group（橘色範圍）且同步控制面板
+  function createNewGroupAt(latLng, defaultName = 'New Area', defaultRadius = 1000) {
+    if (!latLng) return;
+
+    const lat = +latLng.lat().toFixed(6);
+    const lng = +latLng.lng().toFixed(6);
+
+    const name = prompt('新增範圍：輸入名稱', defaultName);
+    if (name === null) return;
+
+    const groupData = { name, lat, lng, radiusM: defaultRadius };
+    groups.push(groupData);
+
+    const { marker } = buildOrangeGroupOnMap(groupData);
+    bounds.extend(marker.getPosition());
+
+    printOrangeState();
+    console.log('New group added:', groupData);
+  }
+
+  // 右鍵時詢問要新增地點或範圍
+  function handleMapRightClick(e) {
+    if (!e.latLng) return;
+
+    const choice = prompt('右鍵選擇動作：\n1 = 新增地點\n2 = 新增範圍 (預設半徑 1000m)', '1');
+    if (choice === null) return;
+
+    if (choice === '1') {
+      createNewPlaceAt(e.latLng);
+    } else if (choice === '2') {
+      createNewGroupAt(e.latLng);
+    }
+  }
+
+  // 地圖空白處右鍵 → 選單（新增地點 / 新增範圍）
+  map.addListener('rightclick', handleMapRightClick);
 
   // === 橘色控制面板 ===
   const control = document.createElement('div');
@@ -278,11 +324,10 @@
     'position:fixed;bottom:10px;right:10px;background:#fff;padding:10px;border:1px solid #ccc;border-radius:8px;max-height:60vh;overflow-y:auto;font-family:system-ui;font-size:12px;z-index:99999;';
   control.innerHTML = `<b style="font-size:13px;">Orange Radius Control</b><br>`;
 
-  for (const o of orangeItems) {
+  function appendOrangeControlBlock(o) {
     const block = document.createElement('div');
     block.style.margin = '8px 0';
 
-    // 上面一行：名稱 + 編輯按鈕
     const headerRow = document.createElement('div');
     headerRow.style.display = 'flex';
     headerRow.style.alignItems = 'center';
@@ -389,6 +434,13 @@
     block.append(headerRow, row);
     control.append(block);
   }
+
+  // 橘色：圓 + 滑桿控制（初始化既有 groups）
+  for (const p of groups) {
+    const { marker } = buildOrangeGroupOnMap(p);
+    bounds.extend(marker.getPosition());
+  }
+  if (!bounds.isEmpty()) map.fitBounds(bounds);
 
   document.body.append(control);
 
