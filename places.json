@@ -64,5 +64,11 @@
     "en": "Futako-Tamagawa",
     "lat": 35.6101,
     "lng": 139.6271
+  },
+  {
+    "lat": 35.66359,
+    "lng": 139.663569,
+    "jp": "Test",
+    "en": "test"
   }
 ]

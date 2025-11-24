@@ -230,9 +230,24 @@
     console.log('New place added:', newPlace);
   }
 
-  // 共用：實際在地圖上建立一個橘色 group（marker + circle + label + panel）
+  // 共用：實際在地圖上建立一個橘色 group（marker + circle + label + panel），並與 groups 同步
   function buildOrangeGroupOnMap(groupData) {
     const pos = { lat: groupData.lat, lng: groupData.lng };
+
+    // 若尚未被加入 groups（例如初始化以外的情境），確保 groups 也有這筆資料
+    const exists = groups.some(g =>
+      Math.abs(g.lat - groupData.lat) < 1e-6 &&
+      Math.abs(g.lng - groupData.lng) < 1e-6 &&
+      g.name === groupData.name
+    );
+    if (!exists) {
+      groups.push({
+        name: groupData.name,
+        lat: groupData.lat,
+        lng: groupData.lng,
+        radiusM: groupData.radiusM
+      });
+    }
 
     const marker = new google.maps.Marker({
       map,
@@ -257,14 +272,26 @@
 
     circle.bindTo('center', marker, 'position');
 
-    // 拖曳時讓 label 跟著位置移動
-    marker.addListener('position_changed', () => {
-      const currentPos = marker.getPosition();
-      if (currentPos) labelOverlay.setPosition(currentPos);
-    });
-
     const o = { name: groupData.name, marker, circle, labelOverlay };
     orangeItems.push(o);
+
+    // 拖曳時讓 label 跟著位置移動，並同步更新 groups 中的座標
+    marker.addListener('position_changed', () => {
+      const currentPos = marker.getPosition();
+      if (currentPos) {
+        labelOverlay.setPosition(currentPos);
+
+        const gx = groups.find(g =>
+          g.name === o.name &&
+          Math.abs(g.lat - groupData.lat) < 1e-6 &&
+          Math.abs(g.lng - groupData.lng) < 1e-6
+        );
+        if (gx) {
+          gx.lat = +currentPos.lat().toFixed(6);
+          gx.lng = +currentPos.lng().toFixed(6);
+        }
+      }
+    });
 
     // 右鍵一律共用 1/2 選單
     circle.addListener('rightclick', (e) => {
@@ -281,7 +308,7 @@
     return { o, marker };
   }
 
-  // 共用：建立 group（橘色範圍）且同步控制面板
+  // 共用：建立 group（橘色範圍）且同步控制面板與 groups
   function createNewGroupAt(latLng, defaultName = 'New Area', defaultRadius = 1000) {
     if (!latLng) return;
 
@@ -292,7 +319,6 @@
     if (name === null) return;
 
     const groupData = { name, lat, lng, radiusM: defaultRadius };
-    groups.push(groupData);
 
     const { marker } = buildOrangeGroupOnMap(groupData);
     bounds.extend(marker.getPosition());
@@ -323,6 +349,56 @@
   control.style.cssText =
     'position:fixed;bottom:10px;right:10px;background:#fff;padding:10px;border:1px solid #ccc;border-radius:8px;max-height:60vh;overflow-y:auto;font-family:system-ui;font-size:12px;z-index:99999;';
   control.innerHTML = `<b style="font-size:13px;">Orange Radius Control</b><br>`;
+
+  // 下載 JSON 小工具
+  function downloadJson(filename, obj) {
+    const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // 儲存按鈕列
+  const toolbar = document.createElement('div');
+  toolbar.style.margin = '6px 0 4px';
+  toolbar.style.display = 'flex';
+  toolbar.style.gap = '4px';
+  toolbar.style.flexWrap = 'wrap';
+
+  const savePlacesBtn = document.createElement('button');
+  savePlacesBtn.type = 'button';
+  savePlacesBtn.textContent = '💾 下載 places.json';
+  savePlacesBtn.style.fontSize = '11px';
+  savePlacesBtn.style.padding = '2px 6px';
+  savePlacesBtn.style.cursor = 'pointer';
+  savePlacesBtn.onclick = () => {
+    downloadJson('places.json', places);
+  };
+
+  const saveGroupsBtn = document.createElement('button');
+  saveGroupsBtn.type = 'button';
+  saveGroupsBtn.textContent = '💾 下載 groups.json';
+  saveGroupsBtn.style.fontSize = '11px';
+  saveGroupsBtn.style.padding = '2px 6px';
+  saveGroupsBtn.style.cursor = 'pointer';
+  saveGroupsBtn.onclick = () => {
+    downloadJson('groups.json', groups);
+  };
+
+  toolbar.append(savePlacesBtn, saveGroupsBtn);
+
+  // 中間區塊：所有 group 控制列都塞這裡
+  const groupsContainer = document.createElement('div');
+
+  // 底部 footer：分隔線 + 下載按鈕
+  const footer = document.createElement('div');
+  footer.append(document.createElement('hr'));
+  footer.append(toolbar);
 
   function appendOrangeControlBlock(o) {
     const block = document.createElement('div');
@@ -372,6 +448,7 @@
         }
 
         // 更新物件本身
+        const oldName = o.name;
         o.name = newName;
         nameEl.textContent = newName;
 
@@ -381,6 +458,17 @@
         // 更新地圖上的白底 label
         if (o.labelOverlay && typeof o.labelOverlay.setText === 'function') {
           o.labelOverlay.setText(newName);
+        }
+
+        // 同步更新 groups 裡對應的名稱
+        const pos = o.marker && o.marker.getPosition();
+        if (pos) {
+          const gx = groups.find(g =>
+            g.name === oldName &&
+            Math.abs(g.lat - +pos.lat().toFixed(6)) < 1e-6 &&
+            Math.abs(g.lng - +pos.lng().toFixed(6)) < 1e-6
+          );
+          if (gx) gx.name = newName;
         }
 
         // 換回顯示 div
@@ -430,12 +518,15 @@
       const idx = orangeItems.indexOf(o);
       if (idx >= 0) orangeItems.splice(idx, 1);
 
-      const gIdx = groups.findIndex(g =>
-        g.name === o.name &&
-        Math.abs(g.lat - o.marker.getPosition().lat()) < 1e-6 &&
-        Math.abs(g.lng - o.marker.getPosition().lng()) < 1e-6
-      );
-      if (gIdx >= 0) groups.splice(gIdx, 1);
+      const pos = o.marker && o.marker.getPosition();
+      if (pos) {
+        const gIdx = groups.findIndex(g =>
+          g.name === o.name &&
+          Math.abs(g.lat - +pos.lat().toFixed(6)) < 1e-6 &&
+          Math.abs(g.lng - +pos.lng().toFixed(6)) < 1e-6
+        );
+        if (gIdx >= 0) groups.splice(gIdx, 1);
+      }
 
       // 從面板移除 UI 區塊
       block.remove();
@@ -473,7 +564,7 @@
 
     row.append(input, valueEl);
     block.append(headerRow, row);
-    control.append(block);
+    groupsContainer.append(block);
   }
 
   // 橘色：圓 + 滑桿控制（初始化既有 groups）
@@ -482,6 +573,10 @@
     bounds.extend(marker.getPosition());
   }
   if (!bounds.isEmpty()) map.fitBounds(bounds);
+
+  // 控制面板組完所有區塊後，先掛 group 區塊，再掛 footer（內含下載按鈕）
+  control.append(groupsContainer);
+  control.append(footer);
 
   document.body.append(control);
 
