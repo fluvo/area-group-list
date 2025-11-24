@@ -402,7 +402,48 @@
       input.addEventListener('blur', () => finish(true));
     };
 
-    headerRow.append(nameEl, editBtn);
+    // 刪除按鈕
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.textContent = '❌';
+    deleteBtn.style.fontSize = '11px';
+    deleteBtn.style.padding = '0 4px';
+    deleteBtn.style.marginLeft = '4px';
+    deleteBtn.style.cursor = 'pointer';
+    deleteBtn.style.border = '1px solid #f2b0b0';
+    deleteBtn.style.borderRadius = '4px';
+    deleteBtn.style.background = '#ffecec';
+    deleteBtn.style.color = '#b00000';
+
+    deleteBtn.onclick = () => {
+      const ok = confirm(`要刪除範圍「${o.name}」嗎？`);
+      if (!ok) return;
+
+      // 從地圖移除
+      if (o.circle) o.circle.setMap(null);
+      if (o.marker) o.marker.setMap(null);
+      if (o.labelOverlay && typeof o.labelOverlay.onRemove === 'function') {
+        o.labelOverlay.onRemove();
+      }
+
+      // 從狀態陣列移除
+      const idx = orangeItems.indexOf(o);
+      if (idx >= 0) orangeItems.splice(idx, 1);
+
+      const gIdx = groups.findIndex(g =>
+        g.name === o.name &&
+        Math.abs(g.lat - o.marker.getPosition().lat()) < 1e-6 &&
+        Math.abs(g.lng - o.marker.getPosition().lng()) < 1e-6
+      );
+      if (gIdx >= 0) groups.splice(gIdx, 1);
+
+      // 從面板移除 UI 區塊
+      block.remove();
+
+      printOrangeState();
+    };
+
+    headerRow.append(nameEl, editBtn, deleteBtn);
 
     // 下面一行：slider + 距離
     const row = document.createElement('div');
