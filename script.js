@@ -18,7 +18,7 @@
   const places = await fetch('https://raw.githubusercontent.com/fluvo/place-group-kits/refs/heads/main/places.json')
     .then(response => response.json());
 
-  // get groups
+  // get groups (object keyed by id)
   const groups = await fetch('https://raw.githubusercontent.com/fluvo/place-group-kits/refs/heads/main/groups.json')
     .then(response => response.json());
 
@@ -237,7 +237,8 @@
   }
 
   // ★ 初始化：把 GitHub 來的 places 都畫出來
-  for (const p of places) {
+  for (const [id, p] of Object.entries(places)) {
+    if (!p.id) p.id = id;
     createPlaceMarker(p);
   }
 
@@ -260,8 +261,9 @@
     const en = prompt('新增地點：輸入英文名稱', '');
     if (en === null) return;
 
+    const id = generateId();
     const newPlace = {
-      id: generateId(),
+      id,
       lat,
       lng,
       locales: {
@@ -273,7 +275,7 @@
         }
       }
     };
-    places.push(newPlace);
+    places[id] = newPlace;
     createPlaceMarker(newPlace);
 
     console.log('New place added:', newPlace);
@@ -284,7 +286,7 @@
     const pos = { lat: groupData.lat, lng: groupData.lng };
 
     const placeNameById = (id) => {
-      const place = places.find(pl => pl.id === id);
+      const place = places[id];
       return place?.locales?.ja?.name || '';
     };
 
@@ -301,19 +303,13 @@
     const labelText = computeGroupLabel(groupData);
 
     // 若尚未被加入 groups（例如初始化以外的情境），確保 groups 也有這筆資料
-    const exists = groups.some(g =>
-      Math.abs(g.lat - groupData.lat) < 1e-6 &&
-      Math.abs(g.lng - groupData.lng) < 1e-6 &&
-      g.radius === groupData.radius
-    );
-    if (!exists) {
-      groups.push({
-        id: groupData.id,
+    if (!groups[groupData.id]) {
+      groups[groupData.id] = {
         placeIds: groupData.placeIds,
         lat: groupData.lat,
         lng: groupData.lng,
         radius: groupData.radius
-      });
+      };
     }
 
     const marker = new google.maps.Marker({
@@ -348,7 +344,7 @@
       if (currentPos) {
         labelOverlay.setPosition(currentPos);
 
-        const gx = groups.find(g => g.id === o.id);
+        const gx = groups[o.id];
         if (gx) {
           gx.lat = +currentPos.lat().toFixed(6);
           gx.lng = +currentPos.lng().toFixed(6);
@@ -378,7 +374,8 @@
     const lat = +latLng.lat().toFixed(6);
     const lng = +latLng.lng().toFixed(6);
 
-    const groupData = { id: generateId(), placeIds: [], lat, lng, radius: defaultRadius };
+    const id = generateId();
+    const groupData = { id, placeIds: [], lat, lng, radius: defaultRadius };
 
     const { marker } = buildOrangeGroupOnMap(groupData);
     bounds.extend(marker.getPosition());
@@ -547,8 +544,7 @@
       const idx = orangeItems.indexOf(o);
       if (idx >= 0) orangeItems.splice(idx, 1);
 
-      const gIdx = groups.findIndex(g => g.id === o.id);
-      if (gIdx >= 0) groups.splice(gIdx, 1);
+      if (groups[o.id]) delete groups[o.id];
 
       // 從面板移除 UI 區塊
       block.remove();
@@ -569,7 +565,7 @@
       }
 
       for (const placeId of o.placeIds) {
-        const place = places.find(p => p.id === placeId);
+        const place = places[placeId];
         const label = place?.locales?.ja?.name || placeId || '';
 
         const chip = document.createElement('span');
@@ -603,7 +599,7 @@
 
           const names = o.placeIds
             .map(id => {
-              const pl = places.find(p => p.id === id);
+              const pl = places[id];
               return pl?.locales?.ja?.name || '';
             })
             .filter(Boolean);
@@ -625,7 +621,7 @@
     function updateGroupLabelFromPlaces() {
       const names = (o.placeIds || [])
         .map(id => {
-          const pl = places.find(p => p.id === id);
+          const pl = places[id];
           return pl?.locales?.ja?.name || '';
         })
         .filter(Boolean);
@@ -641,7 +637,7 @@
       const placeId = raw.trim().toUpperCase();
       if (!placeId) return;
 
-      const place = places.find(p => p.id === placeId);
+      const place = places[placeId];
       if (!place) {
         alert(`找不到 id 為 ${placeId} 的地點`);
         return;
@@ -652,7 +648,7 @@
       }
 
       o.placeIds.push(placeId);
-      const g = groups.find(g => g.id === o.id);
+      const g = groups[o.id];
       if (g) {
         g.placeIds = Array.from(new Set([...(g.placeIds || []), placeId]));
       }
@@ -698,7 +694,7 @@
       // 同步更新 groups 裡對應範圍的 radius
       const pos = o.marker && o.marker.getPosition();
       if (pos) {
-        const g = groups.find(g => g.id === o.id);
+        const g = groups[o.id];
         if (g) g.radius = val;
       }
 
@@ -713,8 +709,8 @@
   }
 
   // 橘色：圓 + 滑桿控制（初始化既有 groups）
-  for (const p of groups) {
-    const { marker } = buildOrangeGroupOnMap(p);
+  for (const [id, g] of Object.entries(groups)) {
+    const { marker } = buildOrangeGroupOnMap({ id, ...g });
     bounds.extend(marker.getPosition());
   }
   if (!bounds.isEmpty()) map.fitBounds(bounds);
@@ -728,13 +724,19 @@
 
   // === Console 輸出 ===
   function printOrangeState() {
-    const arr = orangeItems.map(o => {
+    const obj = {};
+    orangeItems.forEach(o => {
       const pos = o.marker.getPosition();
-      const g = groups.find(g => g.id === o.id) || {};
-      return { id:g.id, placeIds:g.placeIds, lat:+pos.lat().toFixed(6), lng:+pos.lng().toFixed(6), radius:Math.round(o.circle.getRadius()) };
+      const g = groups[o.id] || {};
+      obj[o.id] = {
+        placeIds: g.placeIds || [],
+        lat: +pos.lat().toFixed(6),
+        lng: +pos.lng().toFixed(6),
+        radius: Math.round(o.circle.getRadius())
+      };
     });
     console.clear();
-    console.log(stringifyWithCustomKeyOrder(arr, 2));
+    console.log(stringifyWithCustomKeyOrder(obj, 2));
   }
 
   // 拖曳更新後重新印出
